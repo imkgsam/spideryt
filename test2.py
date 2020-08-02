@@ -11,6 +11,7 @@ import queue
 from test import main
 import threading
 import time
+import random
 
 exitFlag = 0
 
@@ -63,17 +64,18 @@ class myThread (threading.Thread):
                     print("{} downloading {}".format(self.name, pid))
                     downloadParts(pid, url, self.temp_swap_dir)
                     self.count += 1
-                    time.sleep(1)
+                    time.sleep(random.randint(0, 2)+random.randint(1, 99)/100)
+
                 except Exception as exp:
                     print(
                         'Having ERROR downloading parts {}, requeue this request'.format(pid))
                     print(exp)
-                    self.q.append(url)
+                    self.q.put(url)
                     self.fail += 1
-                    time.sleep(2.21)
+                    time.sleep(random.randint(0, 5)+random.randint(1, 99)/100)
             else:
-                self.q.release()
-        print('{} processed {} tasks failed {} times'.format(
+                self.ql.release()
+        print('***********{} processed {} tasks failed {} times*************'.format(
             self.name, self.count, self.fail))
 
 
@@ -143,14 +145,12 @@ def genOutputFile(inter_file, output_file):
 
 def compute_process(target_swap_dir):
     files = os.listdir(target_swap_dir)
-    print('-->> {}%'.format(round(len(files)/total_count*10000)/100, 2))
+    print('-->> {}%\n'.format(round(len(files)/total_count*10000)/100, 2))
 
 
 def downloadParts(pid, url, own_swap_dir):
 
     if not os.path.exists(os.path.join(own_swap_dir, pid)):
-        print('Downloading {} part'.format(pid))
-
         res = get(url, timeout=11, headers=header, proxies=proxies)
         if res.status_code == 200:
             tempfd = open(os.path.join(own_swap_dir, pid), 'wb')
@@ -159,7 +159,7 @@ def downloadParts(pid, url, own_swap_dir):
         else:
             print('request not ok')
     else:
-        print('XXX Skiping {} part'.format(pid))
+        print('XXX Skiping {} part\n'.format(pid))
 
 
 def downloadChunklistFile(chunklist_url, chunklist_file_path):
@@ -194,7 +194,6 @@ def downloadAll(output, chunklist, thread=1):
         downloadChunklistFile(chunklist, chunklist_file_path)
 
     prefix = chunklist[:chunklist.index('chunklist.m3u8')]
-    queue = []
     temp_swap_dir = os.path.join(swap_dir, output.replace('.mp4', '_swap'))
     if not os.path.exists(temp_swap_dir):
         os.mkdir(temp_swap_dir)
@@ -205,7 +204,6 @@ def downloadAll(output, chunklist, thread=1):
     global total_count
     total_count = len(https)
     print('This Video chunklist file has {} links:'.format(len(https)))
-    queue = https
 
     queueLock = threading.Lock()
     workQueue = queue.Queue(len(https))
@@ -216,16 +214,18 @@ def downloadAll(output, chunklist, thread=1):
     # Fill the queue
     time1 = time.time()
     queueLock.acquire()
-    for req in https:
-        workQueue.put(req)
+    for url in https:
+        workQueue.put(url)
     queueLock.release()
     time2 = time.time()
 
     # Create new threads
     for tName in threadList:
         thread = myThread(threadID, tName, workQueue, queueLock, temp_swap_dir)
-        thread.start()
         threads.append(thread)
+        thread.daemon = True
+        thread.start()
+
         threadID += 1
 
     # busy looping until queue is emptied
@@ -244,7 +244,7 @@ def downloadAll(output, chunklist, thread=1):
     temp_dir = output[:output.index('_')]
     if not os.path.exists(os.path.join(done_dir, temp_dir)):
         os.mkdir(os.path.join(done_dir, temp_dir))
-    output_file = os.path.join(done_dir, temp_dir, output)
+    output_file = os.path.join(done_dir, temp_dir, output[output.index('_'):])
     genOutputFile(inter_file, output_file)
     clearTargetDir(temp_swap_dir, remove=True)
     time4 = time.time()
